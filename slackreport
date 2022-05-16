@@ -1,0 +1,191 @@
+import groovy.util.XmlParser
+import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
+pipeline{
+    agent any
+    environment {
+         JENKINS_ID = credentials('<credentials')
+        }
+    stages{        
+        stage("Run Report") {
+            steps{
+                script{
+                   echo "ID = $JENKINS_ID, user=$JENKINS_ID_USR, pass=$JENKINS_ID_PSW"
+                    String slackFinalMsg = ""
+                    String slackMessage
+                    String jobName 
+                    String channel 
+                    String color
+                    String allureURL
+                    String buildNumber
+                    String buildNumberURL   
+                    String countFailed
+                    String countPassed
+                    String countSkipped
+                    String countBroken
+                    String allureStatus
+                    String testRptURL
+                    Integer buildNoCount
+                    String JenkinsURL = "https://jenkins.corporate.local"
+                    //Enter list of jobnames here
+                    def list = [
+                        "SP-SingleNode-DirectPost-AIT",
+                        "SP-SingleNode-3DSecure-AIT",
+                        "SP-SingleNode-AccessControlAPI-AIT",
+                        "SP-SingleNode-AntiFraud-FraudGuard-AIT",
+                        "SP-SingleNode-AntiFraud-FraudGuardV2-AIT",
+                        "SP-SingleNode-ApplePay-AIT",
+                        "SP-SingleNode-CardService-AIT",
+                        "SP-SingleNode-DirectEntry-AIT",
+                        "SP-SingleNode-FraudService-AIT",
+                        "SP-SingleNode-FraudService-ReD-AIT",
+                        "SP-SingleNode-Intranet-AIT",
+                        "SP-SingleNode-MDES-AIT",
+                        "SP-SingleNode-MerchantPortal-AIT",
+                        "SP-SingleNode-MerchantService-AIT",
+                        "SP-SingleNode-MultiCurrency-AIT",
+                        "SP-SingleNode-PeriodicServer-AIT",
+                        "SP-SingleNode-PostBillPay-AIT",
+                        "SP-SingleNode-QueryService-AIT",
+                        "SP-SingleNode-SecureBill-AIT",
+                        "SP-SingleNode-TokenServer-AIT",
+                        "SP-SingleNode-TransactionRegisterService-AIT",
+                        "SP-SingleNode-VTSAPI-AIT",
+                        "SP-SingleNode-XMLAPI-AIT",
+                        "SP-Singlenode-3DSv2-UI-AIT",
+                        "SP-Singlenode-3DSv2-UI-AIT-EDGE",
+                        "SP-Singlenode-3DSv2-UI-AIT-Firefox"
+                        ]
+                    //enter name of the slack channel here        
+                    channel = "#qa"
+                    
+                    for (item in list) {
+                        jobName = item
+                        echo "JOBNAME = $item"
+                        slackMessage = ""
+                        allureStatus = "TRUE"
+                        buildNumber = ""
+                        
+                        buildNumber = curlGETRequest("$JenkinsURL/job/$jobName/lastBuild/buildNumber" as String)
+                        echo "Buildnumber => $buildNumber"
+                
+                        buildNumberURL = "<$JenkinsURL/job/$jobName/$buildNumber|$buildNumber>"
+                        slackMessage = "$jobName (Build# $buildNumberURL)"
+                
+                      // curl to capture allure statistics
+                        String allureResponse = curlGETRequest("$JenkinsURL/job/$jobName/$buildNumber/allure/widgets/summary.json" as String)
+                        echo "allureResponse = $allureResponse"
+                        //if allure report is generated, then display allure results
+                        if (allureResponse.contains("Allure Report")) {
+                            echo "allure report"
+                            //retreive allure statistics
+                            def allureJson = new JsonSlurper().parseText(allureResponse)
+                         
+                            countFailed  = allureJson.statistic.failed
+                            countSkipped = allureJson.statistic.skipped
+                            countPassed  = allureJson.statistic.passed
+                            countBroken  = allureJson.statistic.broken
+                            
+                            slackMessage = slackMessage + "\n>Passed:$countPassed Failed:$countFailed Skipped:$countSkipped Broken:$countBroken " 
+                            allureURL = "<$JenkinsURL/job/$jobName/$buildNumber/allure/|Allure-Report>"
+                            slackMessage = slackMessage + "$allureURL"
+                        }
+                        else {
+                            allureStatus = "FALSE"  
+                        }
+                        
+                        //if HTML report is generated, then display allure results
+                        if (allureStatus == "FALSE"){
+                            echo"Test Report"
+                            String resultsResponse = curlGETRequest("$JenkinsURL/job/$jobName/$buildNumber/testReport/api/json" as String)
+                            if (resultsResponse.contains("failCount"))  {
+                                def testReport = new JsonSlurper().parseText(resultsResponse)
+                                slackMessage = slackMessage + "\n>Passed:$testReport.passCount Failed:$testReport.failCount Skipped:$testReport.skipCount "
+                                //Test Results
+                                testRptURL = "<$JenkinsURL/job/$jobName/$buildNumber/testReport/|TestReport>"
+                                slackMessage = slackMessage + testRptURL
+                            }
+                        }
+                         
+                        // display job status
+                        String jobResponse = curlGETRequest("$JenkinsURL/job/$jobName/$buildNumber/api/json" as String)
+                        //capture job status
+                        def jobJson = new JsonSlurper().parseText(jobResponse)
+                        String jobStatus =  jobJson.result
+                        echo "jobstatus:$jobStatus"
+                        //slackMessage = slackMessage  + " Status: $jobStatus\n"
+                        
+                        //decide colour
+                        switch(jobStatus) {
+                            case "SUCCESS":
+                              //color= "#25E439"
+                              break
+                            case "FAILURE":
+                              //color= "#E02525"
+                              //notify slack
+                              //slackNotify(channel,jobName,color,slackMessage)
+                              if (slackMessage!= "") {
+                                  if (slackFinalMsg== ""){
+                                      echo"--first--"
+                                     slackFinalMsg = "\n$slackMessage" 
+                                  }
+                                  else {
+                                      echo"--second--"
+                                     slackFinalMsg =  slackFinalMsg + slackMessage
+                                  }
+                                  slackFinalMsg =  slackFinalMsg + "\n"
+                              }
+                              break
+                            case "ABORTED":
+                              //color= "#FFA500"
+                              //notify slack
+                              //slackNotify(channel,jobName,color,slackMessage)
+                              if (slackMessage!= "") {
+                                  if (slackFinalMsg== ""){
+                                      echo"--third--"
+                                     slackFinalMsg = "\n$slackMessage" 
+                                  }
+                                  else {
+                                     slackFinalMsg =  slackFinalMsg + slackMessage
+                                  }
+                                  slackFinalMsg =  slackFinalMsg + "\n"
+                              }
+                              break
+                        }
+                    } //for loop
+                    slackNotify(channel,"List of Jobs Failed in SP-SingleNode-Master-AIT-Pipeline","#E02525",slackFinalMsg)
+                }//script
+            }//steps    
+        } //stage  
+    }//stages    
+} //pipeline
+        
+        
+def curlGETRequest(String url) {
+    String secureAuth = "$JENKINS_ID_USR:$JENKINS_ID_PSW" as String
+    sh(script: "curl -s -u $secureAuth --location --request GET '$url' \\\n" +
+            "--header 'Accept: application/json' \\\n" +
+            "--header 'Content-Type: application/json'", returnStdout: true)
+}
+
+def slackNotify(String channel, String jobName, String color, String slackMessage) {
+    //tempchannel
+  
+    //qa
+    String slackURL = '<slackurl>'
+    echo "Sending ${slackMessage} to ${channel}"
+    def payload = JsonOutput.toJson([channel    : channel,
+                                     username   : jobName,
+                                     icon_emoji : ":jenkins:",
+                                     attachments: [[
+                                                          color: color,
+                                                          text : slackMessage
+                                                  ]]
+    ])
+    try {
+        sh "curl --silent -X POST --data-urlencode \'payload=${payload}\' ${slackURL}"
+    }
+    catch (Exception e) {
+        
+    }
+}
