@@ -31,8 +31,10 @@ pipeline{
                         int cnt = 1
                         String trString
                         String results = ""
-                        Date date = new Date()
-                        String todayDate = date.format("yyyy-mm-dd")     
+                        def date = new Date()
+                        def dtFormat = "yyyy-MM-dd"
+                        def todayDate = date.format(dtFormat, TimeZone.getTimeZone('IST'))
+                        println todayDate     
                          while(totalLength > 0){
                           startTR = responseHtml.indexOf("<tr>")
                           endTR = responseHtml.indexOf("</tr>")
