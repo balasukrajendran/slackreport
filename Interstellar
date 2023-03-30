@@ -204,7 +204,7 @@ String replaceWords(String inputStr){
     return inputStr
 }
 def curlGETRequest(String url) {
-    String secureAuth = "bala.kri0" as String
+    String secureAuth = "<id:api>" as String
     sh(script: "curl -s -u $secureAuth --location --request GET '$url' \\\n" +
             "--header 'Accept: application/json' \\\n" +
             "--header 'Content-Type: application/json'", returnStdout: true)
@@ -212,7 +212,7 @@ def curlGETRequest(String url) {
 
 
 def slackNotify(String channel, String jobName, String color, String slackMessage) {
-    String slackURL = 'https://hooks.slack.com/services/TC/B05S/T94Ju'
+    String slackURL = '<slack url>'
     echo "Sending ${slackMessage} to ${channel}"
     def payload = JsonOutput.toJson([channel    : channel,
                                      username   : jobName,
