@@ -1,0 +1,232 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+
+import groovy.util.XmlSlurper
+
+
+pipeline{
+    agent any
+    stages{        
+        stage("Run Report") {
+            steps{
+                script{
+                   
+                        // display job status
+                        String response = curlGETRequest("https://securetransact.atlassian.net/wiki/rest/api/content/1041891329?expand=body.storage" as String)
+                        def responseJson = new JsonSlurper().parseText(response)
+                        String responseHtml = responseJson.body.storage.value
+                        //--------------------
+                        int startTR = responseHtml.indexOf("<tr>")
+                        int endTR
+                        int startTD
+                        int endTD
+                        int totalTR
+                        int totalTRLength
+                        int totalLength = responseHtml.length()
+                        int cnt = 1
+                        String trString
+                        String results = ""
+                        //get today's date
+                        def date = new Date()
+                        def dtFormat = "yyyy-MM-dd"
+                        def todayDate = date.format(dtFormat, TimeZone.getTimeZone('IST'))
+                        println ("----------today=" + todayDate)
+                         while(totalLength > 0){
+                          startTR = responseHtml.indexOf("<tr>")
+                          endTR = responseHtml.indexOf("</tr>")
+                            if (endTR > 0) {
+                              
+                              trString = responseHtml.substring(startTR,endTR)
+                              //picks only records with SPGI and current date
+                              // if (trString.indexOf("SPGI-")>=0 && trString.indexOf('2022-04-06') >=0 ){
+                              if (trString.indexOf("SPGI-")>=0 && trString.indexOf(todayDate.trim()) >=0 ){
+                                println "-----------------" + trString
+                               if (cnt > 1){
+                                  results = results + "(" + cnt + ") " + getall(trString) + "\n"
+                               }
+                               else{
+                                  results = "(" + cnt + ") " + getall(trString) + "\n"
+                               }
+                               cnt = cnt + 1
+                              }
+                              startTR = endTR + 5
+                              totalLength = responseHtml.length()
+                              responseHtml = responseHtml.substring(startTR,totalLength)
+                              totalLength = responseHtml.length()
+                            }
+                            else{
+                              totalLength = 0
+                            }
+                         } //end while
+                        print ">>>"+ results
+                        
+                        //----------------
+                        if (results != ""){
+                          slackNotify("#interstellar-internal","Deployments scheduled for today","#E02525",results)
+                        }
+                        else{
+                            println "<<<<<<<<<No Releases today>>>>>>>>>>"
+                        }
+                        //echo doc
+                }//script
+            }//steps    
+        } //stage  
+    }//stages    
+} //pipeline
+        
+def String getall(String fullString){
+  int starttag = 0
+  int endtag = 0
+  int fullStringLen = fullString.length()
+  int count = 0
+  String currstr = ""
+  String returnStr = ""
+  
+  String component = ""
+  String changerequest = ""
+  String platform = ""
+  String status = ""
+    component = ""
+    changerequest = ""
+    platform = ""
+    status = ""
+    jira = ""
+    while(fullStringLen > 0){
+      starttag = fullString.indexOf("<td")
+      endtag = fullString.indexOf("</td>")
+        if (starttag >= 0 && endtag > 0) {
+  
+          currstr = fullString.substring(starttag,endtag)
+    
+          println ("count=" + count)
+          
+          switch (count)
+          {
+            case 0:
+                //jira ticket
+                jira = currstr.substring(currstr.indexOf(">"),currstr.length())
+                jira = jira.substring(jira.indexOf("key\">"),jira.length())
+                jira = jira.substring(0,jira.indexOf("<"))
+                jira = jira.substring(jira.indexOf(">")+1,jira.length())
+                jira = jira.toUpperCase()
+                jira = jira.trim()
+                jira = "<https://securetransact.atlassian.net/browse/$jira|$jira>"
+                jira = "[" + jira + "]"
+                jira = jira.padRight(15," ")
+                println ("jira="+jira)
+                break;
+            case 1:
+                //component
+                component = currstr.substring(currstr.indexOf("<p>")+3,currstr.indexOf("</p>"))
+                component = replaceWords(component)
+                component = "[" + component.trim() + "]"
+                println ("component ="+component)
+                break;
+            case 2:  
+                //platform
+                platform = currstr.substring(currstr.indexOf(">")+1,currstr.length())
+                platform = replaceWords(platform)
+                platform = "[" + platform.trim() + "]"
+                platform = platform.padRight(5," ")
+                println ("platform ="+platform)
+                break;     
+            case 3:
+                //change request
+                if (currstr.indexOf("SPGI-") >0) {
+                   changerequest = currstr.substring(currstr.indexOf(">"),currstr.length())
+                   changerequest = changerequest.substring(changerequest.indexOf("SPGI-"),changerequest.length())
+                   changerequest = changerequest.substring(0,changerequest.indexOf("<"))
+                   changerequest = changerequest.trim()
+                   changerequest = "<https://securetransact.atlassian.net/browse/$changerequest|$changerequest>"
+                   changerequest = "[" + changerequest + "]"
+                   changerequest = changerequest.padRight(15," ")
+                    
+                   println("changerequest="+changerequest)
+                }
+                break;
+            case 4:
+                break;
+            case 5:
+                //status
+                //currstr = currstr.toLowerCase()
+                // if (currstr.indexOf("NEW") >=0 || currstr.indexOf("AWAITING CAB") >=0 ||  
+                // currstr.indexOf("AWAITING APPROVALS") >=0 || currstr.indexOf("WAITING FOR DEPLOYMENT") >=0 || 
+                // currstr.indexOf("DONE") >=0 || currstr.indexOf("WONT DO/ROLLBACK") >=0) { 
+                    status = currstr.substring(currstr.indexOf(">"),currstr.length())
+                    status = status.substring(status.indexOf("title\">"),status.length())
+                    status = status.substring(0,status.indexOf("<"))
+                    status = status.substring(status.indexOf(">")+1,status.length())
+                    status = status.toUpperCase()
+                    status = "[" + status.trim() + "]"
+                    status = status.padRight(15," ")
+                    println ("status="+status)
+                //}
+                break;
+            case 6:   
+                //notes
+                break;   
+          }//end switch
+          starttag = endtag + 5
+          fullStringLen = fullString.length()
+          fullString = fullString.substring(starttag,fullStringLen)
+          fullStringLen = fullString.length()
+          count = count + 1  //added today
+        }
+        else{
+          fullStringLen = 0
+        }
+    }//end while
+    return jira + component + platform + changerequest + status 
+}   
+String replaceWords(String inputStr){
+    
+    if (inputStr.indexOf("&nbsp;") >=0){
+        inputStr = inputStr.replaceAll("&nbsp;"," ")
+    }
+    if (inputStr.indexOf("<p>") >=0){
+        inputStr = inputStr.replaceAll("<p>","")
+    }
+    if (inputStr.indexOf("</p>") >=0){
+        inputStr = inputStr.replaceAll("</p>","")
+    }
+    if (inputStr.indexOf("<br />") >=0){
+        inputStr = inputStr.replaceAll("<br />","")
+    }
+    if (inputStr.indexOf("<span") >=0){
+        println "inputStr before=" + inputStr
+         inputStr = inputStr.substring(inputStr.indexOf(">")+1,inputStr.indexOf("</span>"))
+         println "inputStr after=" + inputStr
+    }
+    return inputStr
+}
+def curlGETRequest(String url) {
+    String secureAuth = "bala.kri0" as String
+    sh(script: "curl -s -u $secureAuth --location --request GET '$url' \\\n" +
+            "--header 'Accept: application/json' \\\n" +
+            "--header 'Content-Type: application/json'", returnStdout: true)
+}
+
+
+def slackNotify(String channel, String jobName, String color, String slackMessage) {
+    String slackURL = 'https://hooks.slack.com/services/TC/B05S/T94Ju'
+    echo "Sending ${slackMessage} to ${channel}"
+    def payload = JsonOutput.toJson([channel    : channel,
+                                     username   : jobName,
+                                     icon_emoji : ":point_right:",
+                                     attachments: [[
+                                                          color: color,
+                                                          text : slackMessage
+                                                  ]]
+    ])
+    try {
+        sh "curl --silent -X POST --data-urlencode \'payload=${payload}\' ${slackURL}"
+    }
+    catch (Exception e) {
+        
+    }
+}
+
