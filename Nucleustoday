@@ -5,7 +5,6 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
-
 import groovy.util.XmlSlurper
 
 
@@ -31,10 +30,12 @@ pipeline{
                         int cnt = 1
                         String trString
                         String results = ""
+                        //get today's date
                         def date = new Date()
                         def dtFormat = "yyyy-MM-dd"
                         def todayDate = date.format(dtFormat, TimeZone.getTimeZone('IST'))
-                        println todayDate     
+                        //def todayDate = '2023-04-13'
+                        println ("----------today=" + todayDate)
                          while(totalLength > 0){
                           startTR = responseHtml.indexOf("<tr>")
                           endTR = responseHtml.indexOf("</tr>")
@@ -44,7 +45,7 @@ pipeline{
                               //picks only records with SPGI and current date
                               // if (trString.indexOf("SPGI-")>=0 && trString.indexOf('2022-04-06') >=0 ){
                               if (trString.indexOf("SPGI-")>=0 && trString.indexOf(todayDate.trim()) >=0 ){
-                               // println "-----------------" + trString
+                                println "-----------------" + trString
                                if (cnt > 1){
                                   results = results + "(" + cnt + ") " + getall(trString) + "\n"
                                }
@@ -66,7 +67,10 @@ pipeline{
                         
                         //----------------
                         if (results != ""){
-                          slackNotify("#nucleus-qa","Deployments scheduled today","#E02525",results)
+                          slackNotify("#testa","Deployments scheduled for today","#E02525",results)
+                        }
+                        else{
+                            println "<<<<<<<<<No Releases today>>>>>>>>>>"
                         }
                         //echo doc
                 }//script
@@ -87,33 +91,62 @@ def String getall(String fullString){
   String changerequest = ""
   String platform = ""
   String status = ""
+  String jira = ""
+  String jira_temp = ""
     component = ""
     changerequest = ""
     platform = ""
     status = ""
+    jira = ""
+    jira_temp = ""
     while(fullStringLen > 0){
       starttag = fullString.indexOf("<td")
       endtag = fullString.indexOf("</td>")
         if (starttag >= 0 && endtag > 0) {
-          //println ">>"+fullString.substring(starttag,endtag)
+  
           currstr = fullString.substring(starttag,endtag)
-          count = count + 1  
+    
+          println ("count=" + count)
           switch (count)
           {
             case 1:
+                break;
+            case 2:
                 component = currstr.substring(currstr.indexOf(">")+1,currstr.length())
                 component = replaceWords(component)
                 component = "[" + component.trim() + "]"
                 //component = component.padRight(50," ")
                 println ("component ="+component)
                 break;
-            case 2:
-                //jira ticket
-                break;
             case 3:
+                //jira ticket
+                println ("===" + currstr)
+                
+                while (currstr.indexOf("ac:name=\"key\">")>=0) {
+                    jira_temp = ""
+                    currstr = currstr.substring(currstr.indexOf("ac:name=\"key\">"),currstr.length())
+                    jira_temp = currstr.substring(currstr.indexOf(">")+1,currstr.indexOf("<"))
+                    currstr = currstr.substring(currstr.indexOf("<"),currstr.length())
+                    println ("jira#"+jira_temp)
+                    println ("<><><>" + currstr)
+                    jira_temp = jira_temp.toUpperCase()
+                    jira_temp = jira_temp.trim()
+                    jira_temp = "<https://securetransact.atlassian.net/browse/$jira_temp|$jira_temp>"
+                    if (jira == "") {
+                        jira = "[" + jira_temp + "]"
+                    }
+                    else
+                    {
+                       jira = jira + "[" + jira_temp + "]" 
+                    }
+                    jira = jira.padRight(15," ")
+                }
+                 println ("jira="+jira)
+                break;
+            case 4:
                 //change description
                 break;
-            case 4:  
+            case 5:  
                 //platform
                 platform = currstr.substring(currstr.indexOf(">")+1,currstr.length())
                 platform = replaceWords(platform)
@@ -121,9 +154,11 @@ def String getall(String fullString){
                 platform = platform.padRight(5," ")
                 println ("platform ="+platform)
                 break;     
-            case 5:
+            case 6:
+               
                 //change request
-                if (currstr.indexOf("SPGI-") >=0) {
+                if (currstr.indexOf("SPGI-") >0) {
+                   
                     changerequest = currstr.substring(currstr.indexOf(">"),currstr.length())
                     changerequest = changerequest.substring(changerequest.indexOf("SPGI-"),changerequest.length())
                     changerequest = changerequest.substring(0,changerequest.indexOf("<"))
@@ -135,10 +170,10 @@ def String getall(String fullString){
                     println("changerequest="+changerequest)
                 }
                 break;
-            case 6:
+            case 7:
                 //planned deployment date
                 break;
-            case 7:
+            case 8:
                 //status
                 currstr = currstr.toLowerCase()
                 if (currstr.indexOf("new") >=0 || currstr.indexOf("prepared") >=0 ||  currstr.indexOf("cab") >=0 || currstr.indexOf("done") >=0 || currstr.indexOf("not done") >=0) { 
@@ -152,7 +187,7 @@ def String getall(String fullString){
                     println ("status="+status)
                 }
                 break;
-            case 8:   
+            case 9:   
                 //notes
                 break;   
           }//end switch
@@ -160,12 +195,13 @@ def String getall(String fullString){
           fullStringLen = fullString.length()
           fullString = fullString.substring(starttag,fullStringLen)
           fullStringLen = fullString.length()
+          count = count + 1  //added today
         }
         else{
           fullStringLen = 0
         }
     }//end while
-    return component + "\n" +  platform + changerequest +  status 
+    return component + jira +  platform + changerequest +  status 
 }   
 String replaceWords(String inputStr){
     
@@ -189,7 +225,7 @@ String replaceWords(String inputStr){
     return inputStr
 }
 def curlGETRequest(String url) {
-    String secureAuth = "<id>:<apikey>" as String
+    String secureAuth = "bala.krishnancoil@com.au:2" as String
     sh(script: "curl -s -u $secureAuth --location --request GET '$url' \\\n" +
             "--header 'Accept: application/json' \\\n" +
             "--header 'Content-Type: application/json'", returnStdout: true)
@@ -197,7 +233,7 @@ def curlGETRequest(String url) {
 
 
 def slackNotify(String channel, String jobName, String color, String slackMessage) {
-    String slackURL = '<slackurl>'
+    String slackURL = ''
     echo "Sending ${slackMessage} to ${channel}"
     def payload = JsonOutput.toJson([channel    : channel,
                                      username   : jobName,
