@@ -4,7 +4,7 @@ import groovy.json.JsonOutput
 pipeline{
     agent any
     environment {
-         JENKINS_ID = credentials('7a4e3ae06bfcf00ef31')
+         JENKINS_ID = credentials('7a4e3a00ef31')
         }
     stages{        
         stage("Run Report") {
@@ -40,37 +40,37 @@ pipeline{
                     String JenkinsURL = "https://jenkins.corporate.local"
                     //Enter list of jobnames here
                     def list = [
-                        "SP-SingleNode-DirectPost-AIT",
-                        "SP-SingleNode-3DSecure-AIT",
+                        "SP-GPayments-3DSv2",
+                        "SP-Intranet-test",
+                        "SP-SingleNode-3DSecure-API",
                         "SP-SingleNode-AccessControlAPI-AIT",
                         "SP-SingleNode-AntiFraud-FraudGuard-AIT",
                         "SP-SingleNode-AntiFraud-FraudGuardV2-AIT",
                         "SP-SingleNode-ApplePay-AIT",
                         "SP-SingleNode-CardService-AIT",
                         "SP-SingleNode-DirectEntry-AIT",
-                         "SP-SingleNode-FraudService-AIT",
+                        "SP-SingleNode-DirectPost-AIT",
+                        "SP-SingleNode-FraudService-AIT",
                         "SP-SingleNode-FraudService-ReD-AIT",
-                        "SP-SingleNode-Intranet-AIT",
+                        "SP-SingleNode-Intranet-SecureBill-Shared",
                         "SP-SingleNode-MDES-AIT",
-                        "SP-SingleNode-MerchantPortal-AIT",
+                        "SP-SingleNode-MerchantPortal-MMF-AIT",
                         "SP-SingleNode-MerchantService-AIT",
                         "SP-SingleNode-MultiCurrency-AIT",
                         "SP-SingleNode-PeriodicServer-AIT",
                         "SP-SingleNode-PostBillPay-AIT",
                         "SP-SingleNode-QueryService-AIT",
-						"SP-SingleNode-Scheme-Mandates",
+                        "SP-SingleNode-Scheme-Mandates",
                         "SP-SingleNode-SecureBill-AIT",
                         "SP-SingleNode-TokenServer-AIT",
                         "SP-SingleNode-TransactionRegisterService-AIT",
-                        "SP-SingleNode-VTSAPI-AIT",
                         "SP-SingleNode-XMLAPI-AIT",
                         "SP-Singlenode-3DSv2-UI-AIT",
-                        "SP-Singlenode-3DSv2-UI-AIT-EDGE",
                         "SP-Singlenode-3DSv2-UI-AIT-Firefox",
                         "SP-Singlenode-Acquirertest-AIT"
                         ]
                     //enter name of the slack channel here        
-                    channel = "#qa"
+                    channel = "#qa-notification"
                     
                     for (item in list) {
                         jobName = item
@@ -82,6 +82,7 @@ pipeline{
                         buildNumber = curlGETRequest("$JenkinsURL/job/$jobName/lastBuild/buildNumber" as String)
                         echo "Buildnumber => $buildNumber"
                         int buildNumberPrev = buildNumber as Integer
+                       // buildNumberPrev = buildNumberPrev - 3
                         buildNumberPrev = buildNumberPrev - 1
                         echo "buildNumberPrev==" + buildNumberPrev
                 
@@ -125,28 +126,38 @@ pipeline{
                             }
                             echo "countPassed:" + countPassed
                             echo "countPassedPrev:" + countPassedPrev
-                            if (countPassed > countPassedPrev){
+                            if (countPassed.equals(0)){
+                                  emojistatus = ":double_vertical_bar:"
+                                  echo "Zero"
+                                }
+                            else if (countPassed > countPassedPrev){
                               emojistatus = ":arrow_upper_right:"
                               echo "UPPPP"
                             }
                             else if (countPassed < countPassedPrev){
                               emojistatus = ":arrow_lower_right:"
                               echo "downnnn"
-                            }else {
-                              emojisatus = ""
+                            }
+                            
+                            if (countPassed>0 && countFailed.equals(0) && countBroken.equals(0))
+                            {
+                              echo "great"  
+                              emojistatus = ":checkered_flag:"
                             }
                             //------------------------------------------
                             
                             slackMessage = slackMessage + "\n>Passed:$countPassed Failed:$countFailed Skipped:$countSkipped Broken:$countBroken $emojistatus" 
                             allureURL = "<$JenkinsURL/job/$jobName/$buildNumber/allure/|Allure-Report>"
                             slackMessage = slackMessage + "$allureURL"
+                            echo "slackmessage== $slackMessage"
                             //------------------------------------------
                             
                             //------------------------------------------
                         }
                         else {
                             allureStatus = "FALSE"  
-                        }
+                            echo "JOBNAME---- = $jobName"
+                            }
                         
                         //if HTML report is generated, then display allure results
                         emojistatus = ""
@@ -167,11 +178,17 @@ pipeline{
                                 failCountHtml = testReport.failCount as Integer
                                 skipCountHtml = testReport.skipCount as Integer
                                 if (resultsResponsePrev.contains("failCount"))  {
-                                  passCountHtmlPrev = testReport.passCount as Integer
-                                  failCountHtmlPrev = testReport.failCount as Integer
-                                  skipCountHtmlPrev = testReport.skipCount as Integer 
+                                  passCountHtmlPrev = testReportPrev.passCount as Integer
+                                  failCountHtmlPrev = testReportPrev.failCount as Integer
+                                  skipCountHtmlPrev = testReportPrev.skipCount as Integer 
                                 }
-                                if (passCountHtml > passCountHtmlPrev){
+                                echo "passCountHtml" + passCountHtml
+                                echo "passCountHtmlPrev" + passCountHtmlPrev
+                                if (passCountHtml.equals(0)){
+                                  emojistatus = ":double_vertical_bar:"
+                                  echo "Zero"
+                                }
+                                else if (passCountHtml > passCountHtmlPrev){
                                   emojistatus = ":arrow_upper_right:"
                                   echo "UPPPPHTML"
                                 }
@@ -179,8 +196,11 @@ pipeline{
                                   emojistatus = ":arrow_lower_right:"
                                   echo "downnnnHTML"
                                 }
-                                else {
-                                    emojisatus = ""
+                                
+                                if (passCountHtml> 0 && failCountHtml.equals(0) )
+                                {
+                                    echo "great"
+                                    emojistatus = ":checkered_flag:"
                                 }
                                 slackMessage = slackMessage + "\n>Passed:$passCountHtml Failed:$failCountHtml Skipped:$skipCountHtml $emojistatus "
                                 //Test Results
@@ -201,6 +221,17 @@ pipeline{
                         switch(jobStatus) {
                             case "SUCCESS":
                               //color= "#25E439"
+                              if (slackMessage!= "") {
+                                  if (slackFinalMsg== ""){
+                                      echo"--first--"
+                                     slackFinalMsg = "\n$slackMessage" 
+                                  }
+                                  else {
+                                      echo"--second--"
+                                     slackFinalMsg =  slackFinalMsg + slackMessage
+                                  }
+                                  slackFinalMsg =  slackFinalMsg + "\n"
+                              }
                               break
                             case "FAILURE":
                               //color= "#E02525"
@@ -235,7 +266,8 @@ pipeline{
                               break
                         }
                     } //for loop
-                     slackNotify(channel,"List of Jobs Failed in SP-SingleNode-Master-AIT-Pipeline","#E02525",slackFinalMsg)
+                    echo "=====slackFinalMsg=== $slackFinalMsg"
+                    slackNotify(channel,"SP-SingleNode-Master-AIT-Pipeline Status","#E02525",slackFinalMsg)
                 }//script
             }//steps    
         } //stage  
@@ -244,8 +276,8 @@ pipeline{
         
         
 def curlGETRequest(String url) {
-    //String secureAuth = "$JENKINS_ID_USR:$JENKINS_ID_PSW" as String
-    String secureAuth = "bala.krishnancoil:fgh#" as String
+    String secureAuth = "$JENKINS_ID_USR:$JENKINS_ID_PSW" as String
+    //String secureAuth = "bala.krishnancoil:<sample>" as String
     sh(script: "curl -s -u $secureAuth --location --request GET '$url' \\\n" +
             "--header 'Accept: application/json' \\\n" +
             "--header 'Content-Type: application/json'", returnStdout: true)
@@ -254,7 +286,9 @@ def curlGETRequest(String url) {
 def slackNotify(String channel, String jobName, String color, String slackMessage) {
    
     //qa
-    String slackURL = 'https://hooks'
+    //String slackURL = 'https://hooks.slack.com/services/T3FLWnn'
+    //qa-notification
+    String slackURL = 'https://hooks.slack.com/servic'
     echo "Sending ${slackMessage} to ${channel}"
     def payload = JsonOutput.toJson([channel    : channel,
                                      username   : jobName,
